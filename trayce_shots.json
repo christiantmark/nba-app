@@ -1,0 +1,74 @@
+[
+    {
+        "clock": "PT11M46.00S",
+        "x": 8.886333771353483,
+        "y": 52.94117647058824,
+        "shotDistance": 3.43,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 2
+    },
+    {
+        "clock": "PT07M39.00S",
+        "x": 6.783837056504599,
+        "y": 56.372549019607845,
+        "shotDistance": 3.38,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 4
+    },
+    {
+        "clock": "PT06M40.00S",
+        "x": 6.915243101182654,
+        "y": 49.01960784313725,
+        "shotDistance": 1.34,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 6
+    },
+    {
+        "clock": "PT09M34.00S",
+        "x": 91.27792378449409,
+        "y": 56.127450980392155,
+        "shotDistance": 4.25,
+        "area": "Restricted Area",
+        "shotResult": "Missed",
+        "pointsTotal": null
+    },
+    {
+        "clock": "PT07M20.00S",
+        "x": 93.64323258869908,
+        "y": 48.03921568627451,
+        "shotDistance": 1.22,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 9
+    },
+    {
+        "clock": "PT06M02.00S",
+        "x": 91.67214191852825,
+        "y": 44.11764705882353,
+        "shotDistance": 3.91,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 11
+    },
+    {
+        "clock": "PT05M27.00S",
+        "x": 94.40999984741211,
+        "y": 50.0,
+        "shotDistance": 0.0,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 13
+    },
+    {
+        "clock": "PT04M55.00S",
+        "x": 92.85479632063075,
+        "y": 50.98039215686274,
+        "shotDistance": 1.55,
+        "area": "Restricted Area",
+        "shotResult": "Made",
+        "pointsTotal": 15
+    }
+]
