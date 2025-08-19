@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NBA Lights Setup</title>
+  <title>Lyvframe Setup</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -14,36 +14,34 @@
       align-items: center;
       padding: 2rem;
     }
-
     h1 {
       margin-bottom: 1rem;
       color: #00ffff;
     }
-
-    form {
+    form, .game-setup, .mode-select {
       background: #1c1c1c;
       padding: 1.5rem;
       border-radius: 10px;
       box-shadow: 0 0 12px rgba(0, 255, 255, 0.3);
       width: 100%;
       max-width: 400px;
+      margin-bottom: 2rem;
     }
-
     label {
       display: block;
       margin-bottom: 0.5rem;
       margin-top: 1rem;
     }
-
     input[type="text"],
-    input[type="password"] {
+    input[type="password"],
+    input[type="date"],
+    select {
       width: 100%;
       padding: 0.5rem;
       border-radius: 5px;
       border: none;
       margin-bottom: 1rem;
     }
-
     button {
       background: #00ffff;
       color: #000;
@@ -52,33 +50,345 @@
       border-radius: 5px;
       cursor: pointer;
       font-weight: bold;
+      margin-right: 0.5rem;
     }
-
     button:hover {
       background: #00cccc;
     }
-
     .footer {
       margin-top: 2rem;
       font-size: 0.9rem;
       color: #888;
     }
+    #gameForm {
+      display: none;
+    }
+    #status {
+      margin-top: 1rem;
+      color: #ff6666;
+    }
+    #scoreTable {
+      background: #111;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      width: 100%;
+      max-width: 400px;
+      color: #0ff;
+      font-weight: bold;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    #scoreTable table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: center;
+    }
+    #scoreTable th, #scoreTable td {
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid #0ff;
+    }
+    #shotDisplay {
+      margin-top: 1rem;
+      background: #111;
+      border-radius: 8px;
+      padding: 1rem;
+      width: 100%;
+      max-width: 400px;
+      height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      color: #0ff;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
   <h1>NBA Shot Lights WiFi Setup</h1>
-  <form action="/connect" method="get">
+  <form id="wifiForm">
     <label for="ssid">WiFi SSID</label>
     <input type="text" name="ssid" id="ssid" required />
-
     <label for="pass">WiFi Password</label>
     <input type="password" name="pass" id="pass" required />
-
     <button type="submit">Connect</button>
+    <div id="status"></div>
   </form>
-
+  <div id="modeSelect" class="mode-select" style="display:none">
+    <label>Select Mode</label>
+    <button id="liveModeBtn">Live Game</button>
+    <button id="replayModeBtn">Replay</button>
+  </div>
+  <div id="gameForm" class="game-setup">
+    <div id="selectedGame" style="color:#0ff; margin-bottom:1rem;"></div>
+    <label for="sportSelect">Select a sport</label>
+    <select id="sportSelect">
+      <option value="nba" selected>NBA</option>
+      <option value="nfl">NFL</option>
+    </select>
+    <label for="gameDate">Select a game date</label>
+    <input type="date" id="gameDate" name="gameDate" required />
+    <button id="loadGames" type="button">Load Games</button>
+    <label for="gameSelect">Choose a game</label>
+    <select id="gameSelect"></select>
+    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+      <button id="startWatching">Start Watching</button>
+      <button id="pauseResumeBtn" style="display:none;">Pause</button>
+    </div>
+  </div>
+  <div id="scoreTable">
+    <table>
+      <thead>
+        <tr>
+          <th>Team</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td id="awayTeamName">Away</td>
+          <td id="awayScore">0</td>
+        </tr>
+        <tr>
+          <td id="homeTeamName">Home</td>
+          <td id="homeScore">0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="shotDisplay"></div>
   <div class="footer">
     Made for basketball fans 🏀 | v1.0
   </div>
+  <script>
+    const ec2Host = "https://lyvframe.com";
+    let clientId = localStorage.getItem("client_id");
+    if (!clientId) {
+      clientId = crypto.randomUUID();
+      localStorage.setItem("client_id", clientId);
+    }
+    const wifiForm = document.getElementById('wifiForm');
+    const modeSelect = document.getElementById('modeSelect');
+    const gameForm = document.getElementById('gameForm');
+    const gameDate = document.getElementById('gameDate');
+    const gameSelect = document.getElementById('gameSelect');
+    const status = document.getElementById('status');
+    const shotDisplay = document.getElementById('shotDisplay');
+    const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+    const scoreTable = document.getElementById('scoreTable');
+    const awayTeamNameTd = document.getElementById('awayTeamName');
+    const homeTeamNameTd = document.getElementById('homeTeamName');
+    const awayScoreTd = document.getElementById('awayScore');
+    const homeScoreTd = document.getElementById('homeScore');
+    let pollingShots = false;
+    let pollInterval = null;
+    let lastShotIndex = -1;
+    let isPaused = false;
+    let selectedSport = 'nba';
+    wifiForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ssid = document.getElementById('ssid').value;
+      const pass = document.getElementById('pass').value;
+      try {
+        const response = await fetch(apiUrl(`/connect`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ssid, pass })
+        });
+        const text = await response.text();
+        if (response.ok) {
+          status.style.color = "#00ff88";
+          status.textContent = "✅ WiFi Connected!";
+          wifiForm.style.display = 'none';
+          modeSelect.style.display = 'block';
+        } else {
+          status.style.color = "#ff4444";
+          status.textContent = "❌ Failed to connect: " + text;
+        }
+      } catch (err) {
+        status.style.color = "#ff4444";
+        status.textContent = "❌ Error: " + err.message;
+      }
+    });
+    async function selectSportOnServer(sport, clientId) {
+      const res = await fetch(`${ec2Host}/api/select_sport?client_id=${clientId}&sport=${sport}`);
+      if (!res.ok) {
+        console.error("Failed to set sport:", await res.text());
+      }
+    }
+    document.getElementById('liveModeBtn').addEventListener('click', async () => {
+      try {
+        await selectSportOnServer(selectedSport, clientId);
+        const res = await fetch(apiUrl(`/select_live_game?client_id=${clientId}`));
+        if (res.ok) {
+          const data = await res.json();
+          alert("✅ Live game selected!\n" + (data.message || ""));
+          lastShotIndex = -1;
+          shotDisplay.textContent = '';
+          scoreTable.style.display = 'block';
+          homeTeamNameTd.textContent = data.homeTeam || "Home";
+          awayTeamNameTd.textContent = data.awayTeam || "Away";
+          modeSelect.style.display = 'none';
+          gameForm.style.display = 'none';
+          pauseResumeBtn.style.display = 'inline-block';
+          startPollingShots();
+        } else {
+          alert("❌ Failed to start live mode.");
+        }
+      } catch (err) {
+        alert("❌ Error: " + err.message);
+      }
+    });
+    document.getElementById('startWatching').addEventListener('click', async () => {
+      const gameId = gameSelect.value;
+      if (!gameId) return alert("Please choose a game.");
+      try {
+        await selectSportOnServer(selectedSport, clientId);
+        const res = await fetch(apiUrl(`/select_game?gameId=${gameId}&client_id=${clientId}`));
+        if (res.ok) {
+          alert("✅ Game selected! Starting shot tracking...");
+          lastShotIndex = -1;
+          shotDisplay.textContent = '';
+          scoreTable.style.display = 'block';
+
+          // Update team names display
+          const selectedOption = gameSelect.options[gameSelect.selectedIndex];
+          awayTeamNameTd.textContent = selectedOption.text.split(' @ ')[0];
+          homeTeamNameTd.textContent = selectedOption.text.split(' @ ')[1];
+          document.getElementById("selectedGame").textContent = `Watching: ${selectedOption.text}`;
+
+          startPollingShots();
+          pauseResumeBtn.style.display = 'inline-block';
+        } else {
+          alert("❌ Failed to start tracking.");
+        }
+      } catch (err) {
+        alert("❌ Error: " + err.message);
+      }
+    });
+
+    document.getElementById('replayModeBtn').addEventListener('click', () => {
+      gameForm.style.display = 'block';
+      modeSelect.style.display = 'none';
+      gameDate.style.display = 'block';
+      document.getElementById('loadGames').style.display = 'inline-block';
+      gameSelect.style.display = 'block';
+      document.getElementById('startWatching').style.display = 'inline-block';
+      pauseResumeBtn.style.display = 'none';
+      shotDisplay.textContent = '';
+      scoreTable.style.display = 'none';
+      lastShotIndex = -1;
+      isPaused = false;
+      pauseResumeBtn.textContent = 'Pause';
+      homeScoreTd.textContent = '0';
+      awayScoreTd.textContent = '0';
+      homeTeamNameTd.textContent = 'Home';
+      awayTeamNameTd.textContent = 'Away';
+    });
+    document.getElementById('loadGames').addEventListener('click', async () => {
+      const date = gameDate.value;
+      selectedSport = document.getElementById('sportSelect').value;
+      if (!date) {
+        alert("Please select a game date first.");
+        return;
+      }
+      try {
+        const url = `${ec2Host}/${selectedSport}/games?date=${date}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          alert("Failed to load games for that date.");
+          return;
+        }
+        const games = await response.json();
+        gameSelect.innerHTML = '';
+        games.forEach(game => {
+          const option = document.createElement('option');
+          option.value = game.gameId;               // fix property name here
+          option.textContent = `${game.awayTeam} @ ${game.homeTeam}`;  // fix property names here
+          gameSelect.appendChild(option);
+        });
+      } catch (err) {
+        alert("Error loading games: " + err.message);
+      }
+    });
+    pauseResumeBtn.addEventListener('click', async () => {
+      isPaused = !isPaused;
+      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
+      const url = apiUrl(isPaused ? '/pause' : '/resume');
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId })
+      });
+      if (isPaused) {
+        stopPollingShots();
+      } else {
+        startPollingShots();
+      }
+    });
+    function displayNbaShot(data) {
+      if (data.shot_made) {
+        shotDisplay.textContent += `🏀 ${data.player} ${data.shot_type} at ${data.location}\n`;
+      }
+    }
+
+    function displayNflPlay(data) {
+      shotDisplay.textContent += `Q${data.period || ''} ${data.clock || ''} - ${data.text || ''}\n`;
+    }
+    async function fetchNextShot() {
+      try {
+        let endpoint;
+        if (selectedSport === 'nfl') {
+          endpoint = `/peek_play?client_id=${clientId}`;
+        } else if (selectedSport === 'nba') {
+          endpoint = `/peek_shot?client_id=${clientId}`;
+        }
+
+        const res = await fetch(apiUrl(endpoint));
+        if (res.status === 204) return;
+        if (!res.ok) {
+          shotDisplay.textContent += "Error fetching shot/play: " + (await res.text()) + "\n";
+          return;
+        }
+        const data = await res.json();
+
+        if (data.error === "game_over") {
+          shotDisplay.textContent += "\n🏁 Game over. No more plays left.\n";
+          stopPollingShots();
+          return;
+        }
+
+        if (selectedSport === 'nba') {
+          displayNbaShot(data);
+        } else if (selectedSport === 'nfl') {
+          displayNflPlay(data);
+        }
+
+        shotDisplay.scrollTop = shotDisplay.scrollHeight;
+
+      } catch (err) {
+        shotDisplay.textContent += "Error polling plays/shots: " + err.message + "\n";
+      }
+    }
+
+    function apiUrl(path) {
+      return `${ec2Host}/${selectedSport}${path}`;
+    }
+    document.getElementById('sportSelect').addEventListener('change', (e) => {
+      selectedSport = e.target.value;
+    });
+    function startPollingShots() {
+      if (pollingShots) return;
+      pollingShots = true;
+      fetchNextShot();
+      pollInterval = setInterval(fetchNextShot, 2000);
+    }
+    function stopPollingShots() {
+      pollingShots = false;
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+  </script>
 </body>
 </html>
+

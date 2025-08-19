@@ -1,188 +1,104 @@
-from flask import Flask, jsonify, request
-import requests
-from datetime import datetime
-from threading import Thread, Lock, Event
-import time
-import logging
+from flask import Flask, send_file, request, jsonify
+from flask import abort
+from nba_handler import nba_bp
+# from nfl_handler import nfl_bp
 
 app = Flask(__name__)
 
-NBA_SCHEDULE_URL = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
+# Track paused state per client_id (can be updated later)
+paused_states = {}
 
-shots_cache = []
-last_sent_index = -1
-lock = Lock()
+@app.route("/select_game")
+def select_game_dispatch():
+    game_id = request.args.get("gameId")
+    client_id = request.args.get("client_id")
 
-fetch_thread = None
-stop_event = Event()
+    if not game_id or not client_id:
+        return jsonify({"error": "Missing gameId or client_id"}), 400
 
-def parse_time_actual(t):
-    return datetime.fromisoformat(t.replace("Z", "+00:00"))
+    # Get sport for this client_id (default nba if missing)
+    sport = getattr(app, "client_states", {}).get(client_id, {}).get("sport", "nba")
 
-@app.route('/games/<date_str>', methods=['GET'])
-def get_games(date_str):
-    try:
-        target_date = datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        return jsonify({"error": "Invalid date format, expected YYYY-MM-DD"}), 400
+    # Build internal path
+    internal_path = f"/{sport}/select_game?gameId={game_id}&client_id={client_id}"
 
-    try:
-        resp = requests.get(NBA_SCHEDULE_URL)
-        resp.raise_for_status()
-        schedule_data = resp.json()
-    except Exception as e:
-        return jsonify({"error": f"Failed to fetch schedule: {e}"}), 500
+    # Forward internally to the correct blueprint view function
+    if sport == "nba":
+        # Call nba_bp select_game directly
+        with app.test_request_context(internal_path):
+            return nba_bp.view_functions['select_game']()
+    # elif sport == "nfl":
+    #     with app.test_request_context(internal_path):
+    #         return nfl_bp.view_functions['select_game']()
+    else:
+        return jsonify({"error": "Unknown sport"}), 400
 
-    schedule = schedule_data.get("leagueSchedule", {}).get("gameDates", [])
-    target_date_str = target_date.strftime("%m/%d/%Y 00:00:00")
+@app.route("/api/select_sport")
+def select_sport():
+    cid   = request.args.get("client_id")
+    sport = request.args.get("sport")
+    if not cid or sport not in ("nba", "nfl"):
+        return jsonify(error="Invalid parameters"), 400
+    # ensure state dict exists
+    from nba_handler import client_states as nba_states
+    from nfl_handler import client_states as nfl_states
+    # we keep a single shared client_states in flask_server; assume you merge them or import one
+    app.client_states = getattr(app, "client_states", {})
+    app.client_states.setdefault(cid, {})["sport"] = sport
+    return jsonify(message=f"Sport set to {sport}"), 200
 
-    for day in schedule:
-        if day.get("gameDate") == target_date_str:
-            games = day.get("games", [])
-            game_list = [{
-                "game_id": g["gameId"],
-                "home_team": g["homeTeam"]["teamTricode"],
-                "away_team": g["awayTeam"]["teamTricode"],
-                "game_time_et": g.get("gameEt", "Unknown")
-            } for g in games]
-            return jsonify(game_list)
+@app.route("/api/current_sport")
+def current_sport():
+    cid = request.args.get("client_id")
+    sport = getattr(app, "client_states", {}).get(cid, {}).get("sport", "nba")
+    return jsonify(sport=sport), 200
 
-    return jsonify([])
+# Register blueprints with unique URL prefixes
+app.register_blueprint(nba_bp, url_prefix='/nba')
+# app.register_blueprint(nfl_bp, url_prefix='/nfl')
 
-def fetch_shots_loop(game_id):
-    global shots_cache, last_sent_index
-    last_known_shot_times = set()
+# Serve index.html at root
+@app.route("/")
+def index():
+    return send_file("index.html")  # Ensure this file is in the same directory
 
-    while not stop_event.is_set():
-        try:
-            url = f"https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_{game_id}.json"
-            resp = requests.get(url, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            actions = data.get("game", {}).get("actions", [])
+@app.route("/is_paused")
+def is_paused():
+    client_id = request.args.get("client_id")
+    return jsonify({"paused": paused_states.get(client_id, False)})
 
-            new_shots = []
-            for a in actions:
-                if (
-                    a.get("actionType") in ["2pt", "3pt"]
-                    and "x" in a and "y" in a
-                    and a.get("shotResult") in ["Made", "Missed"]
-                    and a.get("timeActual")
-                ):
-                    t_actual = a["timeActual"]
-                    if t_actual in last_known_shot_times:
-                        continue  # skip shots we already know about
+@app.route("/pause", methods=["POST"])
+def pause():
+    client_id = request.json.get("client_id")
+    paused_states[client_id] = True
+    return "Paused", 200
 
-                    player_name = a.get("playerNameI") or a.get("playerName") or "Unknown"
-                    team = a.get("teamTricode", "UNK")
-                    x = int(round((a["x"] / 100.0) * 31))
-                    y = int(round((a["y"] / 100.0) * 15))
-                    new_shots.append({
-                        "x": x,
-                        "y": y,
-                        "result": a.get("shotResult"),
-                        "timeActual": t_actual,
-                        "player": player_name,
-                        "team": team
-                    })
-                    last_known_shot_times.add(t_actual)
+@app.route("/resume", methods=["POST"])
+def resume():
+    client_id = request.json.get("client_id")
+    paused_states[client_id] = False
+    return "Resumed", 200
 
-            if new_shots:
-                with lock:
-                    shots_cache.extend(new_shots)
-                    shots_cache.sort(key=lambda s: parse_time_actual(s["timeActual"]))
-                # Don't reset last_sent_index here — Arduino client will track which shot to ask next
+# Optional: root /connect route for compatibility
+@app.route("/connect", methods=["POST"])
+def connect_root():
+    data = request.json
+    ssid = data.get("ssid")
+    password = data.get("pass")
+    if not ssid or not password:
+        return "Missing SSID or password", 400
+    print(f"[ROOT] Received WiFi config: SSID={ssid}, PASS={password}")
+    return "WiFi config received at root", 200
 
-        except Exception as e:
-            print(f"Error fetching shots: {e}")
-
-        time.sleep(5)  # wait before polling again
-
-@app.route('/next_shot', methods=['GET'])
-def next_shot():
-    global last_sent_index
-    with lock:
-        if not shots_cache:
-            return jsonify({"error": "No shot data cached"}), 404
-        if last_sent_index + 1 >= len(shots_cache):
-            return jsonify({"message": "No more shots"}), 204
-        last_sent_index += 1
-        return jsonify(shots_cache[last_sent_index])
-
-def main_interactive():
-    global fetch_thread, stop_event, shots_cache, last_sent_index
-
-    print("🏀 NBA Shot Tracker - Select game to watch")
-
-    while True:
-        date_str = input("Enter date (YYYY-MM-DD): ").strip()
-        if not date_str:
-            print("Please enter a valid date.")
-            continue
-
-        try:
-            datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
-            print("Invalid date format. Use YYYY-MM-DD.")
-            continue
-
-        try:
-            resp = requests.get(f"http://127.0.0.1:5000/games/{date_str}")
-            resp.raise_for_status()
-            games = resp.json()
-        except Exception as e:
-            print(f"Failed to fetch games: {e}")
-            continue
-
-        if not games:
-            print(f"No games found for {date_str}. Try another date.")
-            continue
-
-        print(f"\nGames on {date_str}:")
-        for i, g in enumerate(games):
-            print(f" {i+1}. {g['away_team']} at {g['home_team']} - Tipoff: {g['game_time_et']} ET")
-
-        while True:
-            choice = input("Select game number to watch (or 'q' to enter another date): ").strip()
-            if choice.lower() == 'q':
-                break
-            if not choice.isdigit() or not (1 <= int(choice) <= len(games)):
-                print("Invalid choice. Please enter a valid game number.")
-                continue
-
-            selected_game = games[int(choice) - 1]
-
-            print(f"Selected game: {selected_game['away_team']} at {selected_game['home_team']}")
-            print("Starting shot fetch loop...")
-
-            # Stop previous fetch thread if running
-            if fetch_thread and fetch_thread.is_alive():
-                stop_event.set()
-                fetch_thread.join()
-
-            stop_event.clear()
-            shots_cache = []
-            last_sent_index = -1
-
-            fetch_thread = Thread(target=fetch_shots_loop, args=(selected_game["game_id"],), daemon=True)
-            fetch_thread.start()
-
-            print("Shots fetching started. You can now run your Arduino client to get shots.")
-
-            print("\nYou can keep selecting games or press Ctrl+C to exit.\n")
-            break
-
-def run_flask():
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)  # Suppress Flask info logs
-
-    app.run(debug=False, use_reloader=False, host="0.0.0.0")
+@app.route("/current_mode")
+def current_mode():
+    client_id = request.args.get("client_id")
+    if not client_id or client_id not in app.client_states:
+        return jsonify({"error": "Invalid client_id"}), 400
+    return jsonify({
+        "sport": app.client_states[client_id].get("sport", "unknown")
+    })
 
 if __name__ == "__main__":
-    from threading import Thread
-    flask_thread = Thread(target=run_flask, daemon=True)
-    flask_thread.start()
+    app.run(debug=True, host="0.0.0.0", port=5000)
 
-    time.sleep(1)
-
-    main_interactive()
