@@ -577,6 +577,10 @@ def get_active_players():
     active = client_states[client_id].get("on_court_players", {})
     return jsonify({ "active_players": { team: sorted(list(players)) for team, players in active.items() } })
 
+@nba_bp.route("/player_map")
+def player_map():
+    return jsonify(player_id_name_map)
+
 
 @nba_bp.route('/next_shot', methods=['GET'])
 def next_shot():
