@@ -581,6 +581,64 @@ def get_active_players():
 def player_map():
     return jsonify(player_id_name_map)
 
+@nba_bp.route('/player_stats')
+def player_stats():
+    game_id = request.args.get("gameId")
+    player_id = request.args.get("playerId")
+
+    if not game_id or not player_id:
+        return jsonify({"error": "Missing gameId or playerId"}), 400
+
+    player_id_int = int(player_id)
+
+    try:
+        url = f"https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch boxscore: {e}"}), 500
+
+    # Combine all players from both teams
+    all_players = []
+    for team_key in ["homeTeam", "awayTeam"]:
+        team = data.get("game", {}).get(team_key, {})
+        players_list = team.get("players", [])
+        if isinstance(players_list, dict):
+            players_list = list(players_list.values())
+        for p in players_list:
+            p["team"] = team.get("teamTricode")
+            all_players.append(p)
+
+    # Search by personId (correct field)
+    for p in all_players:
+        if p.get("personId") == player_id_int:
+            stats = p.get("statistics", {})
+            return jsonify({
+                "name": p.get("name"),
+                "team": p.get("team"),
+                "position": p.get("position"),
+                "jerseyNum": p.get("jerseyNum"),
+                "points": stats.get("points", 0),
+                "rebounds": stats.get("reboundsTotal", 0),
+                "assists": stats.get("assists", 0),
+                "steals": stats.get("steals", 0),
+                "blocks": stats.get("blocks", 0),
+                "turnovers": stats.get("turnovers", 0),
+                "fgMade": stats.get("fieldGoalsMade", 0),
+                "fgAttempted": stats.get("fieldGoalsAttempted", 0),
+                "fgPct": stats.get("fieldGoalsPercentage", 0),
+                "threePtMade": stats.get("threePointersMade", 0),
+                "threePtAttempted": stats.get("threePointersAttempted", 0),
+                "threePtPct": stats.get("threePointersPercentage", 0),
+                "ftMade": stats.get("freeThrowsMade", 0),
+                "ftAttempted": stats.get("freeThrowsAttempted", 0),
+                "ftPct": stats.get("freeThrowsPercentage", 0),
+                "minutes": stats.get("minutes", "PT0M0S")
+            })
+
+    return jsonify({"error": "Player not found in boxscore"}), 404
+
 
 @nba_bp.route('/next_shot', methods=['GET'])
 def next_shot():
@@ -653,7 +711,8 @@ def next_shot():
         "period":       shot["period"],
         "isThreePoint": shot.get("isThreePoint", False),
         "isDunk":       shot.get("isDunk", False),
-        "onCourt":      shot.get("onCourt", {"home": [], "away": []})
+        "onCourt":      shot.get("onCourt", {"home": [], "away": []}),
+        "gameId":       client.get("gameId")  # ✅ added
     }
 
 
@@ -746,7 +805,8 @@ def peek_shot():
         "home_team":    home_team,
         "away_team":    away_team,
         "isThreePoint": shot.get("isThreePoint", False),
-        "onCourt":      shot.get("onCourt", {"home": [], "away": []})
+        "onCourt":      shot.get("onCourt", {"home": [], "away": []}),
+        "gameId":       client.get("gameId")  # ✅ added
     })
 
 
@@ -775,6 +835,8 @@ def fetch_shots_loop(client_id, game_id, stop_event):
     right_basket = (38, 15)
     game_url = f"https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_{game_id}.json"
 
+    with lock:
+        client_states[client_id]["gameId"] = game_id
 
     # --- Initialize starters ---
     try:
@@ -929,7 +991,8 @@ def fetch_shots_loop(client_id, game_id, stop_event):
                         "shot_index": idx,
                         "isThreePoint": action_type == "3pt",
                         "isDunk": is_dunk,
-                        "onCourt": on_court_snap
+                        "onCourt": on_court_snap,
+                        "gameId": game_id
                     }
                     client_states[client_id]["next_shot_index"] += 1
                     added += 1

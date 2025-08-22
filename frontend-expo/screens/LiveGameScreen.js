@@ -2,20 +2,18 @@ import React from 'react';
 import { View, Image, Text, StyleSheet } from 'react-native';
 
 export default function LiveGameScreen({ route }) {
-  const { game } = route.params;
-  const { homeTeam, awayTeam } = game;
+  const { homeTeamCode, awayTeamCode, gameId } = route.params;
 
   return (
     <View style={styles.container}>
       <View style={styles.teamContainer}>
-        <Image source={awayTeam.logo} style={styles.logo} />
-        <Text style={styles.label}>{awayTeam.name}</Text>
+        <Text style={styles.label}>{awayTeamCode}</Text>
       </View>
       <Text style={styles.vs}>VS</Text>
       <View style={styles.teamContainer}>
-        <Image source={homeTeam.logo} style={styles.logo} />
-        <Text style={styles.label}>{homeTeam.name}</Text>
+        <Text style={styles.label}>{homeTeamCode}</Text>
       </View>
+      <Text style={{ marginTop: 20 }}>GameId: {gameId}</Text>
     </View>
   );
 }

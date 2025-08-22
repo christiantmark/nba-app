@@ -43,7 +43,7 @@ const getTeamLogo = (code) => {
 
 const WatchingScreen = ({ route }) => {
   const navigation = useNavigation();
-  const { homeTeamCode, awayTeamCode, clientId } = route.params;
+  const { homeTeamCode, awayTeamCode, clientId, gameId } = route.params;
 
 
   const [homeScore, setHomeScore] = useState(0);
@@ -105,36 +105,43 @@ const WatchingScreen = ({ route }) => {
         </View>
 
         {[0, 1, 2, 3, 4].map((i) => (
-        <View style={styles.startersRow} key={i}>
-          <TouchableOpacity
-            style={styles.playerCell}
-            onPress={() => {
-              const player = onCourt.away?.[i];
-              if (player) {
-                navigation.navigate('PlayerProfile', { player });
-              }
-            }}
-          >
-            <Text style={styles.startersPlayer}>
-              {onCourt.away?.[i]?.name || '-'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.startersRow} key={i}>
+            <TouchableOpacity
+              style={styles.playerCell}
+              onPress={() => {
+                const player = onCourt.away?.[i];
+                if (player) {
+                  const playerWithId = { ...player, personId: player.id };
+                  console.log("AWAY player pressed:", playerWithId);
+                  console.log("gameId:", gameId);
+                  navigation.navigate('PlayerProfile', { player: playerWithId, gameId });
+                }
+              }}
+            >
+              <Text style={styles.startersPlayer}>
+                {onCourt.away?.[i]?.name || '-'}
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.playerCell}
-            onPress={() => {
-              const player = onCourt.home?.[i];
-              if (player) {
-                navigation.navigate('PlayerProfile', { player });
-              }
-            }}
-          >
-            <Text style={styles.startersPlayer}>
-              {onCourt.home?.[i]?.name || '-'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ))}
+            <TouchableOpacity
+              style={styles.playerCell}
+              onPress={() => {
+                const player = onCourt.home?.[i];
+                if (player) {
+                  const playerWithId = { ...player, personId: player.id };
+                  console.log("HOME player pressed:", playerWithId);
+                  console.log("gameId:", gameId);
+                  navigation.navigate('PlayerProfile', { player: playerWithId, gameId });
+                }
+              }}
+            >
+              <Text style={styles.startersPlayer}>
+                {onCourt.home?.[i]?.name || '-'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+
 
 
 
