@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, Image, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 
+// Helper to convert "PT34M13.00S" => "34:13"
+function formatMinutes(duration) {
+  if (!duration) return "0:00";
+  const match = duration.match(/PT(\d+)M(\d+)(?:\.\d+)?S/);
+  if (!match) return "0:00";
+
+  const minutes = parseInt(match[1], 10);
+  const seconds = parseInt(match[2], 10);
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export default function PlayerProfile({ route }) {
   const { player, gameId } = route.params;
 
@@ -65,16 +77,22 @@ export default function PlayerProfile({ route }) {
           <Text style={styles.statText}>Team: {playerStats.team}</Text>
           <Text style={styles.statText}>Position: {playerStats.position}</Text>
           <Text style={styles.statText}>Jersey: {playerStats.jerseyNum}</Text>
-          <Text style={styles.statText}>Minutes: {playerStats.minutes}</Text>
+          <Text style={styles.statText}>Minutes: {formatMinutes(playerStats.minutes)}</Text>
           <Text style={styles.statText}>Points: {playerStats.points}</Text>
           <Text style={styles.statText}>Rebounds: {playerStats.rebounds}</Text>
           <Text style={styles.statText}>Assists: {playerStats.assists}</Text>
           <Text style={styles.statText}>Steals: {playerStats.steals}</Text>
           <Text style={styles.statText}>Blocks: {playerStats.blocks}</Text>
           <Text style={styles.statText}>Turnovers: {playerStats.turnovers}</Text>
-          <Text style={styles.statText}>FG: {playerStats.fgMade}/{playerStats.fgAttempted} ({(playerStats.fgPct*100).toFixed(1)}%)</Text>
-          <Text style={styles.statText}>3PT: {playerStats.threePtMade}/{playerStats.threePtAttempted} ({(playerStats.threePtPct*100).toFixed(1)}%)</Text>
-          <Text style={styles.statText}>FT: {playerStats.ftMade}/{playerStats.ftAttempted} ({(playerStats.ftPct*100).toFixed(1)}%)</Text>
+          <Text style={styles.statText}>
+            FG: {playerStats.fgMade}/{playerStats.fgAttempted} ({(playerStats.fgPct*100).toFixed(1)}%)
+          </Text>
+          <Text style={styles.statText}>
+            3PT: {playerStats.threePtMade}/{playerStats.threePtAttempted} ({(playerStats.threePtPct*100).toFixed(1)}%)
+          </Text>
+          <Text style={styles.statText}>
+            FT: {playerStats.ftMade}/{playerStats.ftAttempted} ({(playerStats.ftPct*100).toFixed(1)}%)
+          </Text>
         </View>
       ) : (
         <Text style={styles.noStats}>No stats available</Text>
