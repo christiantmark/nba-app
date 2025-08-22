@@ -93,9 +93,9 @@ def find_games_by_date_range_forward(start_game_id, start_date_str, end_date_str
 
 
 if __name__ == "__main__":
-    start_game_id = "0022400860"  # Adjust as needed to start near Jan 1, 2025
+    start_game_id = "0022400859"  # Adjust as needed to start near Jan 1, 2025
     start_date = "2025-02-28"
-    end_date = "2025-04-01"  # Change if you want a smaller/larger window
+    end_date = "2025-03-07"  # Change if you want a smaller/larger window
 
     upcoming_games = find_games_by_date_range_forward(start_game_id, start_date, end_date)
 
